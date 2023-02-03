@@ -33,14 +33,6 @@ const GAME_FLOW_STATE_LEN_PATH: [u64; 5] = [
     0x68,
 ];
 
-const MENU_HACK: [u64; 5] = [
-    GAME_ENGINE_OFFSET,
-    GAME_INSTANCE_OFFSET,
-    UNKNOWN_OBJ_OFFSET,
-    GAME_FLOW_MANAGER_OFFSET,
-    0x170,
-];
-
 const TRANSITION_DESCRIPTION_PATH: [u64; 3] =
     [GAME_ENGINE_OFFSET, TRANSITION_DESCRIPTION_OFFSET, 0];
 
@@ -90,6 +82,7 @@ struct Game {
     module: u64,
     game_flow_state: Watcher<GameFlowState>,
     transition_description: Pair<[u8; 66]>,
+    use_hack: bool,
 }
 
 impl Game {
@@ -107,6 +100,7 @@ impl Game {
                 old: [0; 66],
                 current: [0; 66],
             },
+            use_hack: false,
         })
     }
 }
@@ -142,21 +136,21 @@ pub extern "C" fn update() {
         // TODO: Make this not horrible
         if &game.transition_description.old == MENU && &game.transition_description.current == HUB {
             asr::timer::start();
+            game.use_hack = true;
         }
     }
 
-    let hack = game
-        .process
-        .read_pointer_path64::<u8>(game.module, &MENU_HACK)
-        .ok();
     match game_flow_state {
         Some(GameFlowState::QuickTravelTransitionState | GameFlowState::LoadingTransitionState) => {
             asr::timer::pause_game_time()
         }
         // Nasty hack here to pause the timer on new game. The game flow state list is empty in this case so we need a workaround
-        // TODO: I think this is a GName index??? not sure. dig into it more and find a proper solution, this could be unstable
-        None if hack == Some(2) => asr::timer::pause_game_time(),
-        _ => asr::timer::resume_game_time(),
+        // Idea here is that when the load finished we will immediately be in the `CinematicSequenceState` and can simply keep the timer paused while the list remains empty
+        None if game.use_hack == true => asr::timer::pause_game_time(),
+        _ => {
+            asr::timer::resume_game_time();
+            game.use_hack = false;
+        }
     };
 }
 

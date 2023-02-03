@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Timer should no longer be paused while on the Main Menu
+
 ## [0.0.2] - 2023-02-03
 
 ### Fixed

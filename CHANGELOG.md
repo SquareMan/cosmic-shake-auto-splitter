@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Timer should now pause for all loads
+
 ## [0.0.1] - 2023-02-01
 
 - Initial Release

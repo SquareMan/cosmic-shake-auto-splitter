@@ -10,15 +10,76 @@ use once_cell::sync::Lazy;
 // TODO: Sig scan for this for resilency to game updates.
 const GAME_ENGINE_OFFSET: u64 = 0x0575_8730;
 const GAME_INSTANCE_OFFSET: u64 = 0xD28;
+const UNKNOWN_OBJ_OFFSET: u64 = 0xF0;
+const GAME_FLOW_MANAGER_OFFSET: u64 = 0xC8;
 
 const TRANSITION_DESCRIPTION_OFFSET: u64 = 0x8B0;
 
-const LOAD_PATH: [u64; 5] = [GAME_ENGINE_OFFSET, GAME_INSTANCE_OFFSET, 0xF0, 0xE0, 0xA0];
+// NOTE: We have to check the list len (0x68) and then dereference the data pointer (0x60) because during normal gameplay
+//       it simply sets the len to 0 and keep the stale state around (also it's null on the main menu)
+const GAME_FLOW_STATE_PATH: [u64; 6] = [
+    GAME_ENGINE_OFFSET,
+    GAME_INSTANCE_OFFSET,
+    UNKNOWN_OBJ_OFFSET,
+    GAME_FLOW_MANAGER_OFFSET,
+    0x60,
+    0x0,
+];
+const GAME_FLOW_STATE_LEN_PATH: [u64; 5] = [
+    GAME_ENGINE_OFFSET,
+    GAME_INSTANCE_OFFSET,
+    UNKNOWN_OBJ_OFFSET,
+    GAME_FLOW_MANAGER_OFFSET,
+    0x68,
+];
+
+const MENU_HACK: [u64; 5] = [
+    GAME_ENGINE_OFFSET,
+    GAME_INSTANCE_OFFSET,
+    UNKNOWN_OBJ_OFFSET,
+    GAME_FLOW_MANAGER_OFFSET,
+    0x170,
+];
+
 const TRANSITION_DESCRIPTION_PATH: [u64; 3] =
     [GAME_ENGINE_OFFSET, TRANSITION_DESCRIPTION_OFFSET, 0];
 
 // TODO: Mutex shouldn't be necessary as this is all single-threaded (double-check this)
 static STATE: Lazy<Mutex<State>> = Lazy::new(|| Mutex::new(State { game: None }));
+
+#[repr(u8)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, bytemuck::CheckedBitPattern)]
+pub enum GameFlowState {
+    Undefined = 0x0,
+    BossBattleState,
+    GameplaySequenceState,
+    CinematicSequenceState,
+    LoadingTransitionState,
+    NPCDialogueState,
+    QuickTravelTransitionState,
+    VideoPlayerState,
+    MountState,
+    RescueState,
+    ChallengeState,
+    MinigameState,
+    TutorialState,
+    SlingshotState,
+}
+
+impl GameFlowState {
+    fn read(proc: &Process, module: u64) -> Option<Self> {
+        let game_state_len = proc
+            .read_pointer_path64::<u8>(module, &GAME_FLOW_STATE_LEN_PATH)
+            .ok();
+        match game_state_len {
+            Some(x) if x > 0 => proc
+                .read_pointer_path64(module, &GAME_FLOW_STATE_PATH)
+                .ok()
+                .map(|x| bytemuck::checked::cast::<u8, _>(x)),
+            _ => None,
+        }
+    }
+}
 
 struct State {
     game: Option<Game>,
@@ -27,7 +88,7 @@ struct State {
 struct Game {
     process: Process,
     module: u64,
-    is_loading: Watcher<u8>,
+    game_flow_state: Watcher<GameFlowState>,
     transition_description: Pair<[u8; 66]>,
 }
 
@@ -41,7 +102,7 @@ impl Game {
         Some(Self {
             process,
             module,
-            is_loading: Watcher::new(),
+            game_flow_state: Watcher::new(),
             transition_description: Pair {
                 old: [0; 66],
                 current: [0; 66],
@@ -59,11 +120,8 @@ pub extern "C" fn update() {
         return;
     };
 
-    let is_loading = game
-        .process
-        .read_pointer_path64(game.module, &LOAD_PATH)
-        .ok();
-    game.is_loading.update(is_loading);
+    let game_flow_state = GameFlowState::read(&game.process, game.module);
+    game.game_flow_state.update(game_flow_state);
 
     let mut buf = [0u8; 66];
     // Need effective address of transition description to read into a buf
@@ -75,7 +133,6 @@ pub extern "C" fn update() {
         )
         .unwrap();
     game.process.read_into_buf(Address(addr), &mut buf).unwrap();
-    asr::print_message(format!("{buf:?}").as_str());
     (
         game.transition_description.old,
         game.transition_description.current,
@@ -88,8 +145,17 @@ pub extern "C" fn update() {
         }
     }
 
-    match is_loading {
-        Some(x) if x != 0 => asr::timer::pause_game_time(),
+    let hack = game
+        .process
+        .read_pointer_path64::<u8>(game.module, &MENU_HACK)
+        .ok();
+    match game_flow_state {
+        Some(GameFlowState::QuickTravelTransitionState | GameFlowState::LoadingTransitionState) => {
+            asr::timer::pause_game_time()
+        }
+        // Nasty hack here to pause the timer on new game. The game flow state list is empty in this case so we need a workaround
+        // TODO: I think this is a GName index??? not sure. dig into it more and find a proper solution, this could be unstable
+        None if hack == Some(2) => asr::timer::pause_game_time(),
         _ => asr::timer::resume_game_time(),
     };
 }

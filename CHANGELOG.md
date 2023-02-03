@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.0.2] - 2023-02-03
+
 ### Fixed
 
 - Timer should now pause for all loads
@@ -15,5 +17,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Initial Release
 
-[unreleased]: https://github.com/SquareMan/cosmic-shake-auto-splitter/compare/v0.0.1...HEAD
+[unreleased]: https://github.com/SquareMan/cosmic-shake-auto-splitter/compare/v0.0.2...HEAD
+[0.0.2]: https://github.com/SquareMan/cosmic-shake-auto-splitter/releases/tag/v0.0.2
 [0.0.1]: https://github.com/SquareMan/cosmic-shake-auto-splitter/releases/tag/v0.0.1

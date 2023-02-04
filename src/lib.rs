@@ -94,13 +94,37 @@ impl Game {
     }
 }
 
+#[derive(Debug, Default)]
+struct Settings {
+    reset: bool,
+}
+
+impl Settings {
+    const fn new() -> Self {
+        Self { reset: true }
+    }
+
+    fn update(&mut self) {
+        // Note: this is unfortunately not implemented in LiveSplit's UI yet, but I think it's a sane default
+        self.reset = asr::user_settings::add_bool(
+            "Reset",
+            "Automatically reset the timer when starting a New Game",
+            true,
+        );
+    }
+}
+
 struct State {
     game: Option<Game>,
+    settings: Settings,
 }
 
 impl State {
     const fn new() -> Self {
-        Self { game: None }
+        Self {
+            game: None,
+            settings: Settings::new(),
+        }
     }
 
     fn update(&mut self) {
@@ -110,15 +134,20 @@ impl State {
             return;
         };
 
+        self.settings.update();
+
         let transition = read_transition(&game.process, game.module)
             .map(|x| game.transition_description.update_infallible(x));
         if let Some(transition) = transition {
-            if asr::timer::state() == TimerState::NotRunning {
-                // TODO: Make this not horrible
-                // Temporary nasty hack, need proper widestring support
-                const MENU: &'static [u8; 66] = b"/\0G\0a\0m\0e\0/\0C\0S\0/\0M\0a\0p\0s\0/\0M\0a\0i\0n\0M\0e\0n\0u\0/\0M\0a\0i\0n\0M\0e\0n\0u\0_\0P\0";
-                const HUB: &'static [u8; 66] = b"/\0G\0a\0m\0e\0/\0C\0S\0/\0M\0a\0p\0s\0/\0B\0i\0k\0i\0n\0i\0B\0o\0t\0t\0o\0m\0/\0B\0B\0_\0P\0\0\0P\0";
-                if &transition.old == MENU && &transition.current == HUB {
+            // TODO: Make this not horrible
+            // Temporary nasty hack, need proper widestring support
+            const MENU: &'static [u8; 66] = b"/\0G\0a\0m\0e\0/\0C\0S\0/\0M\0a\0p\0s\0/\0M\0a\0i\0n\0M\0e\0n\0u\0/\0M\0a\0i\0n\0M\0e\0n\0u\0_\0P\0";
+            const HUB: &'static [u8; 66] = b"/\0G\0a\0m\0e\0/\0C\0S\0/\0M\0a\0p\0s\0/\0B\0i\0k\0i\0n\0i\0B\0o\0t\0t\0o\0m\0/\0B\0B\0_\0P\0\0\0P\0";
+            if &transition.old == MENU && &transition.current == HUB {
+                if self.settings.reset {
+                    asr::timer::reset();
+                }
+                if asr::timer::state() == TimerState::NotRunning {
                     asr::timer::start();
                     game.use_hack = true;
                 }

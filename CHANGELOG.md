@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Additions
+
+- Reset timer on New Game
+
 ## [0.0.3] - 2023-02-03
 
 ### Fixed

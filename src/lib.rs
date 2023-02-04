@@ -1,6 +1,8 @@
-use std::sync::Mutex;
+mod ffi;
 
-use asr::{timer::TimerState, watcher::Watcher, Address, Process};
+use asr::{timer::TimerState, watcher::Watcher, Process};
+
+const EXE: &str = "CosmicShake-Win64-Shipping.exe";
 
 // TODO: Sig scan for this for resilency to game updates.
 const GAME_ENGINE_OFFSET: u64 = 0x0575_8730;
@@ -30,9 +32,6 @@ const GAME_FLOW_STATE_LEN_PATH: [u64; 5] = [
 
 const TRANSITION_DESCRIPTION_PATH: [u64; 3] =
     [GAME_ENGINE_OFFSET, TRANSITION_DESCRIPTION_OFFSET, 0];
-
-// TODO: Mutex shouldn't be necessary as this is all single-threaded (double-check this)
-static STATE: Mutex<State> = Mutex::new(State { game: None });
 
 #[repr(u8)]
 #[derive(Debug, Copy, Clone, PartialEq, Eq, bytemuck::CheckedBitPattern)]
@@ -73,10 +72,6 @@ fn read_transition(proc: &Process, module: u64) -> Option<[u8; 66]> {
         .ok()
 }
 
-struct State {
-    game: Option<Game>,
-}
-
 struct Game {
     process: Process,
     module: u64,
@@ -87,11 +82,8 @@ struct Game {
 
 impl Game {
     fn attach() -> Option<Self> {
-        let process = Process::attach("CosmicShake-Win64-Shipping.exe")?;
-        let module = process
-            .get_module_address("CosmicShake-Win64-Shipping.exe")
-            .ok()?
-            .0;
+        let process = Process::attach(EXE)?;
+        let module = process.get_module_address(EXE).ok()?.0;
         Some(Self {
             process,
             module,
@@ -102,45 +94,52 @@ impl Game {
     }
 }
 
-#[no_mangle]
-pub extern "C" fn update() {
-    let mut state = STATE.lock().unwrap();
-    // TODO: Rehooking after game restart
-    let Some(game) = &mut state.game else {
-        state.game = Game::attach();
-        return;
-    };
-
-    let transition = read_transition(&game.process, game.module)
-        .map(|x| game.transition_description.update_infallible(x));
-    if let Some(transition) = transition {
-        if asr::timer::state() == TimerState::NotRunning {
-            // TODO: Make this not horrible
-            if &transition.old == MENU && &transition.current == HUB {
-                asr::timer::start();
-                game.use_hack = true;
-            }
-        }
-    }
-
-    let game_flow_state = game
-        .game_flow_state
-        .update(GameFlowState::read(&game.process, game.module));
-
-    match game_flow_state.map(|x| x.current) {
-        Some(GameFlowState::QuickTravelTransitionState | GameFlowState::LoadingTransitionState) => {
-            asr::timer::pause_game_time()
-        }
-        // Nasty hack here to pause the timer on new game. The game flow state list is empty in this case so we need a workaround
-        // Idea here is that when the load finished we will immediately be in the `CinematicSequenceState` and can simply keep the timer paused while the list remains empty
-        None if game.use_hack == true => asr::timer::pause_game_time(),
-        _ => {
-            asr::timer::resume_game_time();
-            game.use_hack = false;
-        }
-    };
+struct State {
+    game: Option<Game>,
 }
 
-// Temporary nasty hack, need proper widestring support
-const MENU: &'static [u8; 66] = b"/\0G\0a\0m\0e\0/\0C\0S\0/\0M\0a\0p\0s\0/\0M\0a\0i\0n\0M\0e\0n\0u\0/\0M\0a\0i\0n\0M\0e\0n\0u\0_\0P\0";
-const HUB: &'static [u8; 66] = b"/\0G\0a\0m\0e\0/\0C\0S\0/\0M\0a\0p\0s\0/\0B\0i\0k\0i\0n\0i\0B\0o\0t\0t\0o\0m\0/\0B\0B\0_\0P\0\0\0P\0";
+impl State {
+    const fn new() -> Self {
+        Self { game: None }
+    }
+
+    fn update(&mut self) {
+        // TODO: Rehooking after game restart
+        let Some(game) = &mut self.game else {
+            self.game = Game::attach();
+            return;
+        };
+
+        let transition = read_transition(&game.process, game.module)
+            .map(|x| game.transition_description.update_infallible(x));
+        if let Some(transition) = transition {
+            if asr::timer::state() == TimerState::NotRunning {
+                // TODO: Make this not horrible
+                // Temporary nasty hack, need proper widestring support
+                const MENU: &'static [u8; 66] = b"/\0G\0a\0m\0e\0/\0C\0S\0/\0M\0a\0p\0s\0/\0M\0a\0i\0n\0M\0e\0n\0u\0/\0M\0a\0i\0n\0M\0e\0n\0u\0_\0P\0";
+                const HUB: &'static [u8; 66] = b"/\0G\0a\0m\0e\0/\0C\0S\0/\0M\0a\0p\0s\0/\0B\0i\0k\0i\0n\0i\0B\0o\0t\0t\0o\0m\0/\0B\0B\0_\0P\0\0\0P\0";
+                if &transition.old == MENU && &transition.current == HUB {
+                    asr::timer::start();
+                    game.use_hack = true;
+                }
+            }
+        }
+
+        let game_flow_state = game
+            .game_flow_state
+            .update(GameFlowState::read(&game.process, game.module));
+
+        match game_flow_state.map(|x| x.current) {
+            Some(
+                GameFlowState::QuickTravelTransitionState | GameFlowState::LoadingTransitionState,
+            ) => asr::timer::pause_game_time(),
+            // Nasty hack here to pause the timer on new game. The game flow state list is empty in this case so we need a workaround
+            // Idea here is that when the load finished we will immediately be in the `CinematicSequenceState` and can simply keep the timer paused while the list remains empty
+            None if game.use_hack == true => asr::timer::pause_game_time(),
+            _ => {
+                asr::timer::resume_game_time();
+                game.use_hack = false;
+            }
+        };
+    }
+}

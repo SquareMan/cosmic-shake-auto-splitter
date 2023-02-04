@@ -69,18 +69,8 @@ impl GameFlowState {
 }
 
 fn read_transition(proc: &Process, module: u64) -> Option<[u8; 66]> {
-    let mut buf = [0u8; 66];
-
-    // Need effective address of transition description to read into a buf
-    let addr: u64 = proc
-        .read_pointer_path64(
-            module,
-            &TRANSITION_DESCRIPTION_PATH[0..TRANSITION_DESCRIPTION_PATH.len() - 1],
-        )
-        .unwrap();
-    proc.read_into_buf(Address(addr), &mut buf).ok()?;
-
-    Some(buf)
+    proc.read_pointer_path64(module, &TRANSITION_DESCRIPTION_PATH)
+        .ok()
 }
 
 struct State {

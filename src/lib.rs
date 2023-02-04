@@ -5,7 +5,6 @@ use asr::{
     watcher::{Pair, Watcher},
     Address, Process,
 };
-use once_cell::sync::Lazy;
 
 // TODO: Sig scan for this for resilency to game updates.
 const GAME_ENGINE_OFFSET: u64 = 0x0575_8730;
@@ -37,7 +36,7 @@ const TRANSITION_DESCRIPTION_PATH: [u64; 3] =
     [GAME_ENGINE_OFFSET, TRANSITION_DESCRIPTION_OFFSET, 0];
 
 // TODO: Mutex shouldn't be necessary as this is all single-threaded (double-check this)
-static STATE: Lazy<Mutex<State>> = Lazy::new(|| Mutex::new(State { game: None }));
+static STATE: Mutex<State> = Mutex::new(State { game: None });
 
 #[repr(u8)]
 #[derive(Debug, Copy, Clone, PartialEq, Eq, bytemuck::CheckedBitPattern)]

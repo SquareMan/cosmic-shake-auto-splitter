@@ -1,8 +1,12 @@
 mod ffi;
 
 use asr::{timer::TimerState, watcher::Watcher, Process};
+use widestring::{u16cstr, U16CStr};
 
 const EXE: &str = "CosmicShake-Win64-Shipping.exe";
+
+const MENU: &U16CStr = u16cstr!("/Game/CS/Maps/MainMenu/MainMenu_P");
+const HUB: &U16CStr = u16cstr!("/Game/CS/Maps/BikiniBottom/BB_P");
 
 // TODO: Sig scan for this for resilency to game updates.
 const GAME_ENGINE_OFFSET: u64 = 0x0575_8730;
@@ -67,16 +71,20 @@ impl GameFlowState {
     }
 }
 
-fn read_transition(proc: &Process, module: u64) -> Option<[u8; 66]> {
-    proc.read_pointer_path64(module, &TRANSITION_DESCRIPTION_PATH)
-        .ok()
+fn read_transition(proc: &Process, module: u64) -> Option<[u16; 34]> {
+    let mut buf = proc
+        .read_pointer_path64::<[u16; 34]>(module, &TRANSITION_DESCRIPTION_PATH)
+        .ok()?;
+
+    *buf.last_mut().unwrap() = 0;
+    Some(buf)
 }
 
 struct Game {
     process: Process,
     module: u64,
     game_flow_state: Watcher<GameFlowState>,
-    transition_description: Watcher<[u8; 66]>,
+    transition_description: Watcher<[u16; 34]>,
     use_hack: bool,
 }
 
@@ -139,11 +147,10 @@ impl State {
         let transition = read_transition(&game.process, game.module)
             .map(|x| game.transition_description.update_infallible(x));
         if let Some(transition) = transition {
-            // TODO: Make this not horrible
-            // Temporary nasty hack, need proper widestring support
-            const MENU: &[u8; 66] = b"/\0G\0a\0m\0e\0/\0C\0S\0/\0M\0a\0p\0s\0/\0M\0a\0i\0n\0M\0e\0n\0u\0/\0M\0a\0i\0n\0M\0e\0n\0u\0_\0P\0";
-            const HUB: &[u8; 66] = b"/\0G\0a\0m\0e\0/\0C\0S\0/\0M\0a\0p\0s\0/\0B\0i\0k\0i\0n\0i\0B\0o\0t\0t\0o\0m\0/\0B\0B\0_\0P\0\0\0P\0";
-            if &transition.old == MENU && &transition.current == HUB {
+            // We force the last byte in the buffer to null after reading these strings, so we know we can unwrap here
+            if U16CStr::from_slice_truncate(&transition.old).unwrap() == MENU
+                && U16CStr::from_slice_truncate(&transition.current).unwrap() == HUB
+            {
                 if self.settings.reset {
                     asr::timer::reset();
                 }

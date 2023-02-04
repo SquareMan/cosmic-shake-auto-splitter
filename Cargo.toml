@@ -12,3 +12,4 @@ crate-type = ["cdylib"]
 
 asr = { git = "https://github.com/CryZe/asr" }
 bytemuck = "1.13.0"
+widestring = "1.0.2"

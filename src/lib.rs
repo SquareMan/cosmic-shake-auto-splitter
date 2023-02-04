@@ -1,6 +1,6 @@
 mod ffi;
 
-use asr::{time::Duration, timer::TimerState, watcher::Watcher, Process};
+use asr::{timer::TimerState, watcher::Watcher, Process};
 
 const EXE: &str = "CosmicShake-Win64-Shipping.exe";
 
@@ -61,7 +61,7 @@ impl GameFlowState {
             Some(x) if x > 0 => proc
                 .read_pointer_path64(module, &GAME_FLOW_STATE_PATH)
                 .ok()
-                .map(|x| bytemuck::checked::cast::<u8, _>(x)),
+                .map(bytemuck::checked::cast::<u8, _>),
             _ => None,
         }
     }
@@ -141,8 +141,8 @@ impl State {
         if let Some(transition) = transition {
             // TODO: Make this not horrible
             // Temporary nasty hack, need proper widestring support
-            const MENU: &'static [u8; 66] = b"/\0G\0a\0m\0e\0/\0C\0S\0/\0M\0a\0p\0s\0/\0M\0a\0i\0n\0M\0e\0n\0u\0/\0M\0a\0i\0n\0M\0e\0n\0u\0_\0P\0";
-            const HUB: &'static [u8; 66] = b"/\0G\0a\0m\0e\0/\0C\0S\0/\0M\0a\0p\0s\0/\0B\0i\0k\0i\0n\0i\0B\0o\0t\0t\0o\0m\0/\0B\0B\0_\0P\0\0\0P\0";
+            const MENU: &[u8; 66] = b"/\0G\0a\0m\0e\0/\0C\0S\0/\0M\0a\0p\0s\0/\0M\0a\0i\0n\0M\0e\0n\0u\0/\0M\0a\0i\0n\0M\0e\0n\0u\0_\0P\0";
+            const HUB: &[u8; 66] = b"/\0G\0a\0m\0e\0/\0C\0S\0/\0M\0a\0p\0s\0/\0B\0i\0k\0i\0n\0i\0B\0o\0t\0t\0o\0m\0/\0B\0B\0_\0P\0\0\0P\0";
             if &transition.old == MENU && &transition.current == HUB {
                 if self.settings.reset {
                     asr::timer::reset();
@@ -164,7 +164,7 @@ impl State {
             ) => asr::timer::pause_game_time(),
             // Nasty hack here to pause the timer on new game. The game flow state list is empty in this case so we need a workaround
             // Idea here is that when the load finished we will immediately be in the `CinematicSequenceState` and can simply keep the timer paused while the list remains empty
-            None if game.use_hack == true => asr::timer::pause_game_time(),
+            None if game.use_hack => asr::timer::pause_game_time(),
             _ => {
                 asr::timer::resume_game_time();
                 game.use_hack = false;

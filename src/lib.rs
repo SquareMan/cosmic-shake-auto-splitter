@@ -1,10 +1,6 @@
 use std::sync::Mutex;
 
-use asr::{
-    timer::TimerState,
-    watcher::{Pair, Watcher},
-    Address, Process,
-};
+use asr::{timer::TimerState, watcher::Watcher, Address, Process};
 
 // TODO: Sig scan for this for resilency to game updates.
 const GAME_ENGINE_OFFSET: u64 = 0x0575_8730;
@@ -72,6 +68,21 @@ impl GameFlowState {
     }
 }
 
+fn read_transition(proc: &Process, module: u64) -> Option<[u8; 66]> {
+    let mut buf = [0u8; 66];
+
+    // Need effective address of transition description to read into a buf
+    let addr: u64 = proc
+        .read_pointer_path64(
+            module,
+            &TRANSITION_DESCRIPTION_PATH[0..TRANSITION_DESCRIPTION_PATH.len() - 1],
+        )
+        .unwrap();
+    proc.read_into_buf(Address(addr), &mut buf).ok()?;
+
+    Some(buf)
+}
+
 struct State {
     game: Option<Game>,
 }
@@ -80,7 +91,7 @@ struct Game {
     process: Process,
     module: u64,
     game_flow_state: Watcher<GameFlowState>,
-    transition_description: Pair<[u8; 66]>,
+    transition_description: Watcher<[u8; 66]>,
     use_hack: bool,
 }
 
@@ -95,10 +106,7 @@ impl Game {
             process,
             module,
             game_flow_state: Watcher::new(),
-            transition_description: Pair {
-                old: [0; 66],
-                current: [0; 66],
-            },
+            transition_description: Watcher::new(),
             use_hack: false,
         })
     }
@@ -113,33 +121,23 @@ pub extern "C" fn update() {
         return;
     };
 
-    let game_flow_state = GameFlowState::read(&game.process, game.module);
-    game.game_flow_state.update(game_flow_state);
-
-    let mut buf = [0u8; 66];
-    // Need effective address of transition description to read into a buf
-    let addr: u64 = game
-        .process
-        .read_pointer_path64(
-            game.module,
-            &TRANSITION_DESCRIPTION_PATH[0..TRANSITION_DESCRIPTION_PATH.len() - 1],
-        )
-        .unwrap();
-    game.process.read_into_buf(Address(addr), &mut buf).unwrap();
-    (
-        game.transition_description.old,
-        game.transition_description.current,
-    ) = (game.transition_description.current, buf);
-
-    if asr::timer::state() == TimerState::NotRunning {
-        // TODO: Make this not horrible
-        if &game.transition_description.old == MENU && &game.transition_description.current == HUB {
-            asr::timer::start();
-            game.use_hack = true;
+    let transition = read_transition(&game.process, game.module)
+        .map(|x| game.transition_description.update_infallible(x));
+    if let Some(transition) = transition {
+        if asr::timer::state() == TimerState::NotRunning {
+            // TODO: Make this not horrible
+            if &transition.old == MENU && &transition.current == HUB {
+                asr::timer::start();
+                game.use_hack = true;
+            }
         }
     }
 
-    match game_flow_state {
+    let game_flow_state = game
+        .game_flow_state
+        .update(GameFlowState::read(&game.process, game.module));
+
+    match game_flow_state.map(|x| x.current) {
         Some(GameFlowState::QuickTravelTransitionState | GameFlowState::LoadingTransitionState) => {
             asr::timer::pause_game_time()
         }

@@ -11,6 +11,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Reset timer on New Game
 
+### Fixed
+
+- Splitter should now reattach to the game as necessary
+
 ## [0.0.3] - 2023-02-03
 
 ### Fixed

@@ -1,6 +1,6 @@
 mod ffi;
 
-use asr::{timer::TimerState, watcher::Watcher, Process};
+use asr::{time::Duration, timer::TimerState, watcher::Watcher, Process};
 
 const EXE: &str = "CosmicShake-Win64-Shipping.exe";
 
@@ -128,9 +128,10 @@ impl State {
     }
 
     fn update(&mut self) {
-        // TODO: Rehooking after game restart
-        let Some(game) = &mut self.game else {
-            self.game = Game::attach();
+        // TODO: Limit how often this is called. We could lower the splitter update rate while unhooked
+        self.ensure_hooked();
+
+        let Some(game) = self.game.as_mut() else {
             return;
         };
 
@@ -170,5 +171,19 @@ impl State {
                 game.use_hack = false;
             }
         };
+    }
+
+    fn ensure_hooked(&mut self) {
+        if self
+            .game
+            .as_ref()
+            .map(|x| x.process.is_open())
+            .unwrap_or(false)
+        {
+            // We are already hooked
+            return;
+        }
+
+        self.game = Game::attach();
     }
 }

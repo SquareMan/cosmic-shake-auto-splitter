@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.0.5] - 2023-02-05
+
 ## Fixed
 
 - Made end condition more consistent
@@ -38,7 +40,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Initial Release
 
-[unreleased]: https://github.com/SquareMan/cosmic-shake-auto-splitter/compare/v0.0.4...HEAD
+[unreleased]: https://github.com/SquareMan/cosmic-shake-auto-splitter/compare/v0.0.5...HEAD
+[0.0.5]: https://github.com/SquareMan/cosmic-shake-auto-splitter/releases/tag/v0.0.5
 [0.0.4]: https://github.com/SquareMan/cosmic-shake-auto-splitter/releases/tag/v0.0.4
 [0.0.3]: https://github.com/SquareMan/cosmic-shake-auto-splitter/releases/tag/v0.0.3
 [0.0.2]: https://github.com/SquareMan/cosmic-shake-auto-splitter/releases/tag/v0.0.2

@@ -236,9 +236,10 @@ impl State {
             }
         }
 
+        // After final boss is defeated, split at the start of the next cutscene
         if game.ready_to_end
             && game_flow_state
-                .map(|x| x.changed_to(&GameFlowState::CinematicSequenceState))
+                .map(|x| x.current == GameFlowState::CinematicSequenceState)
                 .unwrap_or(false)
         {
             game.ready_to_end = false;

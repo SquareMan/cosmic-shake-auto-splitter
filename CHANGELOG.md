@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Additions
 
 - Reset timer on New Game
+- Timer will split on start of the ending cutscene
 
 ### Fixed
 

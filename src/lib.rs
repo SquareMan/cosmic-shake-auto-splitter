@@ -37,6 +37,37 @@ const GAME_FLOW_STATE_LEN_PATH: [u64; 5] = [
 const TRANSITION_DESCRIPTION_PATH: [u64; 3] =
     [GAME_ENGINE_OFFSET, TRANSITION_DESCRIPTION_OFFSET, 0];
 
+const WORLD_CONTEXT_OFFSET: u64 = 0x30;
+const CURRENT_WORLD_OFFSET: u64 = 0x280;
+const STREAMING_LEVELS_OFFSET: u64 = 0x88;
+const STREAMING_LEVELS_LEN_OFFSET: u64 = 0x90;
+const PERSISTENT_LEVEL_OFFSET: u64 = 0x128;
+const ACTORS_OFFSET: u64 = 0x98;
+const HEALTH_COMPONENT_OFFSET: u64 = 0x508;
+const CURRENT_HEALTH_OFFSET: u64 = 0x264;
+
+// TODO: consider avoiding hardcoding these indexes by searching for the correct object within arrays
+const SQUIDWARD_BOSS_HEALTH_PATH: [u64; 11] = [
+    GAME_ENGINE_OFFSET,
+    GAME_INSTANCE_OFFSET,
+    WORLD_CONTEXT_OFFSET,
+    CURRENT_WORLD_OFFSET,
+    STREAMING_LEVELS_OFFSET,
+    0x8, // 2nd element of array
+    PERSISTENT_LEVEL_OFFSET,
+    ACTORS_OFFSET,
+    0x3F0, // 0x7E'th element of array
+    HEALTH_COMPONENT_OFFSET,
+    CURRENT_HEALTH_OFFSET,
+];
+const STREAMING_LEVELS_LEN_PATH: [u64; 5] = [
+    GAME_ENGINE_OFFSET,
+    GAME_INSTANCE_OFFSET,
+    WORLD_CONTEXT_OFFSET,
+    CURRENT_WORLD_OFFSET,
+    STREAMING_LEVELS_LEN_OFFSET,
+];
+
 #[repr(u8)]
 #[derive(Debug, Copy, Clone, PartialEq, Eq, bytemuck::CheckedBitPattern)]
 pub enum GameFlowState {
@@ -80,11 +111,18 @@ fn read_transition(proc: &Process, module: u64) -> Option<[u16; 34]> {
     Some(buf)
 }
 
+fn read_boss_health(proc: &Process, module: u64) -> Option<u32> {
+    proc.read_pointer_path64(module, &SQUIDWARD_BOSS_HEALTH_PATH)
+        .ok()
+}
+
 struct Game {
     process: Process,
     module: u64,
     game_flow_state: Watcher<GameFlowState>,
     transition_description: Watcher<[u16; 34]>,
+    squidward_boss_health: Watcher<u32>,
+    ready_to_end: bool,
     use_hack: bool,
 }
 
@@ -97,6 +135,8 @@ impl Game {
             module,
             game_flow_state: Watcher::new(),
             transition_description: Watcher::new(),
+            squidward_boss_health: Watcher::new(),
+            ready_to_end: false,
             use_hack: false,
         })
     }
@@ -156,6 +196,7 @@ impl State {
                 }
                 if asr::timer::state() == TimerState::NotRunning {
                     asr::timer::start();
+                    game.ready_to_end = false;
                     game.use_hack = true;
                 }
             }
@@ -177,6 +218,32 @@ impl State {
                 game.use_hack = false;
             }
         };
+
+        // Sanity check that we're in the final boss
+        // TODO: update this once we're able to tell the name of the active level
+        if game
+            .process
+            .read_pointer_path64::<u32>(game.module, &STREAMING_LEVELS_LEN_PATH)
+            .unwrap_or(0)
+            == 5
+        {
+            let boss_health = read_boss_health(&game.process, game.module)
+                .map(|x| game.squidward_boss_health.update_infallible(x));
+            if let Some(boss_health) = boss_health {
+                if boss_health.changed_to(&0) {
+                    game.ready_to_end = true;
+                }
+            }
+        }
+
+        if game.ready_to_end
+            && game_flow_state
+                .map(|x| x.changed_to(&GameFlowState::CinematicSequenceState))
+                .unwrap_or(false)
+        {
+            game.ready_to_end = false;
+            asr::timer::split();
+        }
     }
 
     fn ensure_hooked(&mut self) {

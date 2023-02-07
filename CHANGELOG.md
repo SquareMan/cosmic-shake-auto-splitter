@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.0.6] - 2023-02-06
+
 ## Fixed
 
 - Moved end condition to start of load (initial loss of control) rather than start of the final cutscene
@@ -45,7 +47,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Initial Release
 
-[unreleased]: https://github.com/SquareMan/cosmic-shake-auto-splitter/compare/v0.0.5...HEAD
+[unreleased]: https://github.com/SquareMan/cosmic-shake-auto-splitter/compare/v0.0.6...HEAD
+[0.0.6]: https://github.com/SquareMan/cosmic-shake-auto-splitter/releases/tag/v0.0.6
 [0.0.5]: https://github.com/SquareMan/cosmic-shake-auto-splitter/releases/tag/v0.0.5
 [0.0.4]: https://github.com/SquareMan/cosmic-shake-auto-splitter/releases/tag/v0.0.4
 [0.0.3]: https://github.com/SquareMan/cosmic-shake-auto-splitter/releases/tag/v0.0.3

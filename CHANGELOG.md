@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## Fixed
 
 - Moved end condition to start of load (initial loss of control) rather than start of the final cutscene
+- Pause timer on loads triggered by Quit To Menu and respawning
 
 ## [0.0.5] - 2023-02-05
 

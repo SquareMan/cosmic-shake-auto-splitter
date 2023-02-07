@@ -7,6 +7,7 @@ const EXE: &str = "CosmicShake-Win64-Shipping.exe";
 
 const MENU: &U16CStr = u16cstr!("/Game/CS/Maps/MainMenu/MainMenu_P");
 const HUB: &U16CStr = u16cstr!("/Game/CS/Maps/BikiniBottom/BB_P");
+const OVERWORLD: &U16CStr = u16cstr!("/Game/CS/Maps/StreamingOverworld/Overworld_P");
 
 // TODO: Sig scan for this for resilency to game updates.
 const GAME_ENGINE_OFFSET: u64 = 0x0575_8730;
@@ -45,6 +46,29 @@ const PERSISTENT_LEVEL_OFFSET: u64 = 0x128;
 const ACTORS_OFFSET: u64 = 0x98;
 const HEALTH_COMPONENT_OFFSET: u64 = 0x508;
 const CURRENT_HEALTH_OFFSET: u64 = 0x264;
+
+const CURRENT_WORLD_PATH: [u64; 4] = [
+    GAME_ENGINE_OFFSET,
+    GAME_INSTANCE_OFFSET,
+    WORLD_CONTEXT_OFFSET,
+    CURRENT_WORLD_OFFSET,
+];
+
+const NUM_STREAMING_LEVELS_BEING_LOADED_PATH: [u64; 5] = [
+    GAME_ENGINE_OFFSET,
+    GAME_INSTANCE_OFFSET,
+    WORLD_CONTEXT_OFFSET,
+    CURRENT_WORLD_OFFSET,
+    0x5EA,
+];
+// First bit
+const BEGUN_PLAY_PATH: [u64; 5] = [
+    GAME_ENGINE_OFFSET,
+    GAME_INSTANCE_OFFSET,
+    WORLD_CONTEXT_OFFSET,
+    CURRENT_WORLD_OFFSET,
+    0x10D,
+];
 
 // TODO: consider avoiding hardcoding these indexes by searching for the correct object within arrays
 const SQUIDWARD_BOSS_HEALTH_PATH: [u64; 11] = [
@@ -87,28 +111,50 @@ pub enum GameFlowState {
     SlingshotState,
 }
 
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub enum Transition {
+    Menu,
+    Hub,
+    Overworld,
+}
+
 impl GameFlowState {
     fn read(proc: &Process, module: u64) -> Option<Self> {
+        let last_game_state = proc
+            .read_pointer_path64(module, &GAME_FLOW_STATE_PATH)
+            .ok()
+            .map(bytemuck::checked::cast::<u8, _>)?;
         let game_state_len = proc
             .read_pointer_path64::<u8>(module, &GAME_FLOW_STATE_LEN_PATH)
-            .ok();
-        match game_state_len {
-            Some(x) if x > 0 => proc
-                .read_pointer_path64(module, &GAME_FLOW_STATE_PATH)
-                .ok()
-                .map(bytemuck::checked::cast::<u8, _>),
-            _ => None,
+            .ok()?;
+        if game_state_len > 0 {
+            Some(last_game_state)
+        } else {
+            // Treat no active states as undefined, this avoids updating our watcher with None and potentially missing a transition
+            Some(GameFlowState::Undefined)
         }
     }
 }
 
-fn read_transition(proc: &Process, module: u64) -> Option<[u16; 34]> {
+fn read_transition(proc: &Process, module: u64) -> Option<Transition> {
     let mut buf = proc
         .read_pointer_path64::<[u16; 34]>(module, &TRANSITION_DESCRIPTION_PATH)
         .ok()?;
 
+    // We force the last byte in the buffer to null after reading these strings, so we know we can unwrap here
     *buf.last_mut().unwrap() = 0;
-    Some(buf)
+    let cstr = U16CStr::from_slice_truncate(&buf).unwrap();
+
+    // can't match on U16CStr
+    if cstr == MENU {
+        Some(Transition::Menu)
+    } else if cstr == HUB {
+        Some(Transition::Hub)
+    } else if cstr == OVERWORLD {
+        Some(Transition::Overworld)
+    } else {
+        None
+    }
 }
 
 fn read_boss_health(proc: &Process, module: u64) -> Option<u32> {
@@ -116,14 +162,20 @@ fn read_boss_health(proc: &Process, module: u64) -> Option<u32> {
         .ok()
 }
 
+fn read_begun_play(proc: &Process, module: u64) -> Option<bool> {
+    let bitfield = proc
+        .read_pointer_path64::<u8>(module, &BEGUN_PLAY_PATH)
+        .ok()?;
+    Some(bitfield & 0b1 == 1)
+}
+
 struct Game {
     process: Process,
     module: u64,
     game_flow_state: Watcher<GameFlowState>,
-    transition_description: Watcher<[u16; 34]>,
+    transition_description: Watcher<Transition>,
     squidward_boss_health: Watcher<u32>,
     ready_to_end: bool,
-    use_hack: bool,
 }
 
 impl Game {
@@ -137,8 +189,25 @@ impl Game {
             transition_description: Watcher::new(),
             squidward_boss_health: Watcher::new(),
             ready_to_end: false,
-            use_hack: false,
         })
+    }
+
+    fn is_loading(&self) -> bool {
+        let Ok(world_ptr) = self
+            .process
+            .read_pointer_path64::<usize>(self.module, &CURRENT_WORLD_PATH) else
+        {
+            return false;
+        };
+
+        let num_streaming_levels_loading = self
+            .process
+            .read_pointer_path64::<u16>(self.module, &NUM_STREAMING_LEVELS_BEING_LOADED_PATH)
+            .unwrap_or(0);
+
+        world_ptr == 0
+            || !read_begun_play(&self.process, self.module).unwrap_or(false)
+            || num_streaming_levels_loading > 0
     }
 }
 
@@ -187,37 +256,47 @@ impl State {
         let transition = read_transition(&game.process, game.module)
             .map(|x| game.transition_description.update_infallible(x));
         if let Some(transition) = transition {
-            // We force the last byte in the buffer to null after reading these strings, so we know we can unwrap here
-            if U16CStr::from_slice_truncate(&transition.old).unwrap() == MENU
-                && U16CStr::from_slice_truncate(&transition.current).unwrap() == HUB
-            {
+            if transition.old == Transition::Menu && transition.current == Transition::Hub {
                 if self.settings.reset {
                     asr::timer::reset();
                 }
                 if asr::timer::state() == TimerState::NotRunning {
                     asr::timer::start();
                     game.ready_to_end = false;
-                    game.use_hack = true;
                 }
             }
         }
 
         let game_flow_state = game
             .game_flow_state
-            .update(GameFlowState::read(&game.process, game.module));
+            .update(GameFlowState::read(&game.process, game.module))
+            .copied();
 
-        match game_flow_state.map(|x| x.current) {
-            Some(
-                GameFlowState::QuickTravelTransitionState | GameFlowState::LoadingTransitionState,
-            ) => asr::timer::pause_game_time(),
-            // Nasty hack here to pause the timer on new game. The game flow state list is empty in this case so we need a workaround
-            // Idea here is that when the load finished we will immediately be in the `CinematicSequenceState` and can simply keep the timer paused while the list remains empty
-            None if game.use_hack => asr::timer::pause_game_time(),
-            _ => {
+        let begun_play = read_begun_play(&game.process, game.module).unwrap_or(true);
+
+        if !begun_play {
+            asr::timer::pause_game_time();
+        } else if matches!(transition.map(|x| x.current), Some(Transition::Menu)) {
+            if game.is_loading() {
+                asr::timer::pause_game_time();
+            } else {
                 asr::timer::resume_game_time();
-                game.use_hack = false;
             }
-        };
+        } else {
+            match game_flow_state.map(|x| x.current) {
+                Some(
+                    GameFlowState::QuickTravelTransitionState
+                    | GameFlowState::LoadingTransitionState,
+                ) => asr::timer::pause_game_time(),
+                Some(GameFlowState::RescueState) if game.is_loading() => {
+                    asr::timer::pause_game_time()
+                }
+                None if game.is_loading() => asr::timer::pause_game_time(),
+                _ => {
+                    asr::timer::resume_game_time();
+                }
+            }
+        }
 
         // Sanity check that we're in the final boss
         // TODO: update this once we're able to tell the name of the active level

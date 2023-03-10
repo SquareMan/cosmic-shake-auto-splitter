@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.0]
+
 ### Additions
 
 - Implemented settings to toggle the reset feature
@@ -54,7 +56,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Initial Release
 
-[unreleased]: https://github.com/SquareMan/cosmic-shake-auto-splitter/compare/v0.0.6...HEAD
+[unreleased]: https://github.com/SquareMan/cosmic-shake-auto-splitter/compare/v0.1.0...HEAD
+[0.1.0]: https://github.com/SquareMan/cosmic-shake-auto-splitter/releases/tag/v0.1.0
 [0.0.6]: https://github.com/SquareMan/cosmic-shake-auto-splitter/releases/tag/v0.0.6
 [0.0.5]: https://github.com/SquareMan/cosmic-shake-auto-splitter/releases/tag/v0.0.5
 [0.0.4]: https://github.com/SquareMan/cosmic-shake-auto-splitter/releases/tag/v0.0.4

@@ -1,6 +1,8 @@
 mod ffi;
+mod paths;
 
 use asr::{timer::TimerState, watcher::Watcher, Process};
+use paths::Paths;
 use widestring::{u16cstr, U16CStr};
 
 const EXE: &str = "CosmicShake-Win64-Shipping.exe";
@@ -8,89 +10,6 @@ const EXE: &str = "CosmicShake-Win64-Shipping.exe";
 const MENU: &U16CStr = u16cstr!("/Game/CS/Maps/MainMenu/MainMenu_P");
 const HUB: &U16CStr = u16cstr!("/Game/CS/Maps/BikiniBottom/BB_P");
 const OVERWORLD: &U16CStr = u16cstr!("/Game/CS/Maps/StreamingOverworld/Overworld_P");
-
-// TODO: Sig scan for this for resilency to game updates.
-const GAME_ENGINE_OFFSET: u64 = 0x0575_8730;
-const GAME_INSTANCE_OFFSET: u64 = 0xD28;
-const UNKNOWN_OBJ_OFFSET: u64 = 0xF0;
-const GAME_FLOW_MANAGER_OFFSET: u64 = 0xC8;
-
-const TRANSITION_DESCRIPTION_OFFSET: u64 = 0x8B0;
-
-// NOTE: We have to check the list len (0x68) and then dereference the data pointer (0x60) because during normal gameplay
-//       it simply sets the len to 0 and keep the stale state around (also it's null on the main menu)
-const GAME_FLOW_STATE_PATH: [u64; 6] = [
-    GAME_ENGINE_OFFSET,
-    GAME_INSTANCE_OFFSET,
-    UNKNOWN_OBJ_OFFSET,
-    GAME_FLOW_MANAGER_OFFSET,
-    0x60,
-    0x0,
-];
-const GAME_FLOW_STATE_LEN_PATH: [u64; 5] = [
-    GAME_ENGINE_OFFSET,
-    GAME_INSTANCE_OFFSET,
-    UNKNOWN_OBJ_OFFSET,
-    GAME_FLOW_MANAGER_OFFSET,
-    0x68,
-];
-
-const TRANSITION_DESCRIPTION_PATH: [u64; 3] =
-    [GAME_ENGINE_OFFSET, TRANSITION_DESCRIPTION_OFFSET, 0];
-
-const WORLD_CONTEXT_OFFSET: u64 = 0x30;
-const CURRENT_WORLD_OFFSET: u64 = 0x280;
-const STREAMING_LEVELS_OFFSET: u64 = 0x88;
-const STREAMING_LEVELS_LEN_OFFSET: u64 = 0x90;
-const PERSISTENT_LEVEL_OFFSET: u64 = 0x128;
-const ACTORS_OFFSET: u64 = 0x98;
-const HEALTH_COMPONENT_OFFSET: u64 = 0x508;
-const CURRENT_HEALTH_OFFSET: u64 = 0x264;
-
-const CURRENT_WORLD_PATH: [u64; 4] = [
-    GAME_ENGINE_OFFSET,
-    GAME_INSTANCE_OFFSET,
-    WORLD_CONTEXT_OFFSET,
-    CURRENT_WORLD_OFFSET,
-];
-
-const NUM_STREAMING_LEVELS_BEING_LOADED_PATH: [u64; 5] = [
-    GAME_ENGINE_OFFSET,
-    GAME_INSTANCE_OFFSET,
-    WORLD_CONTEXT_OFFSET,
-    CURRENT_WORLD_OFFSET,
-    0x5EA,
-];
-// First bit
-const BEGUN_PLAY_PATH: [u64; 5] = [
-    GAME_ENGINE_OFFSET,
-    GAME_INSTANCE_OFFSET,
-    WORLD_CONTEXT_OFFSET,
-    CURRENT_WORLD_OFFSET,
-    0x10D,
-];
-
-// TODO: consider avoiding hardcoding these indexes by searching for the correct object within arrays
-const SQUIDWARD_BOSS_HEALTH_PATH: [u64; 11] = [
-    GAME_ENGINE_OFFSET,
-    GAME_INSTANCE_OFFSET,
-    WORLD_CONTEXT_OFFSET,
-    CURRENT_WORLD_OFFSET,
-    STREAMING_LEVELS_OFFSET,
-    0x8, // 2nd element of array
-    PERSISTENT_LEVEL_OFFSET,
-    ACTORS_OFFSET,
-    0x3F0, // 0x7E'th element of array
-    HEALTH_COMPONENT_OFFSET,
-    CURRENT_HEALTH_OFFSET,
-];
-const STREAMING_LEVELS_LEN_PATH: [u64; 5] = [
-    GAME_ENGINE_OFFSET,
-    GAME_INSTANCE_OFFSET,
-    WORLD_CONTEXT_OFFSET,
-    CURRENT_WORLD_OFFSET,
-    STREAMING_LEVELS_LEN_OFFSET,
-];
 
 #[repr(u8)]
 #[derive(Debug, Copy, Clone, PartialEq, Eq, bytemuck::CheckedBitPattern)]
@@ -119,14 +38,12 @@ pub enum Transition {
 }
 
 impl GameFlowState {
-    fn read(proc: &Process, module: u64) -> Option<Self> {
-        let last_game_state = proc
-            .read_pointer_path64(module, &GAME_FLOW_STATE_PATH)
-            .ok()
+    fn read(paths: &Paths, proc: &Process, module: u64) -> Option<Self> {
+        let last_game_state = paths
+            .game_flow_state
+            .read(proc, module)
             .map(bytemuck::checked::cast::<u8, _>)?;
-        let game_state_len = proc
-            .read_pointer_path64::<u8>(module, &GAME_FLOW_STATE_LEN_PATH)
-            .ok()?;
+        let game_state_len = paths.game_flow_state_len.read(proc, module)?;
         if game_state_len > 0 {
             Some(last_game_state)
         } else {
@@ -136,10 +53,8 @@ impl GameFlowState {
     }
 }
 
-fn read_transition(proc: &Process, module: u64) -> Option<Transition> {
-    let mut buf = proc
-        .read_pointer_path64::<[u16; 34]>(module, &TRANSITION_DESCRIPTION_PATH)
-        .ok()?;
+fn read_transition(paths: &Paths, proc: &Process, module: u64) -> Option<Transition> {
+    let mut buf = paths.transition_description.read(proc, module)?;
 
     // We force the last byte in the buffer to null after reading these strings, so we know we can unwrap here
     *buf.last_mut().unwrap() = 0;
@@ -157,20 +72,9 @@ fn read_transition(proc: &Process, module: u64) -> Option<Transition> {
     }
 }
 
-fn read_boss_health(proc: &Process, module: u64) -> Option<u32> {
-    proc.read_pointer_path64(module, &SQUIDWARD_BOSS_HEALTH_PATH)
-        .ok()
-}
-
-fn read_begun_play(proc: &Process, module: u64) -> Option<bool> {
-    let bitfield = proc
-        .read_pointer_path64::<u8>(module, &BEGUN_PLAY_PATH)
-        .ok()?;
-    Some(bitfield & 0b1 == 1)
-}
-
 struct Game {
     process: Process,
+    paths: Paths,
     module: u64,
     game_flow_state: Watcher<GameFlowState>,
     transition_description: Watcher<Transition>,
@@ -182,8 +86,15 @@ impl Game {
     fn attach() -> Option<Self> {
         let process = Process::attach(EXE)?;
         let module = process.get_module_address(EXE).ok()?.0;
+        let version = process
+            .get_module_size(EXE)
+            .ok()
+            .and_then(Version::from_module_size)?;
+        let paths = Paths::new(version);
+
         Some(Self {
             process,
+            paths,
             module,
             game_flow_state: Watcher::new(),
             transition_description: Watcher::new(),
@@ -193,20 +104,25 @@ impl Game {
     }
 
     fn is_loading(&self) -> bool {
-        let Ok(world_ptr) = self
-            .process
-            .read_pointer_path64::<usize>(self.module, &CURRENT_WORLD_PATH) else
+        let Some(world_ptr) = self
+            .paths.current_world
+            .read(&self.process, self.module) else
         {
             return false;
         };
 
         let num_streaming_levels_loading = self
-            .process
-            .read_pointer_path64::<u16>(self.module, &NUM_STREAMING_LEVELS_BEING_LOADED_PATH)
+            .paths
+            .num_streaming_levels_being_loaded
+            .read(&self.process, self.module)
             .unwrap_or(0);
 
         world_ptr == 0
-            || !read_begun_play(&self.process, self.module).unwrap_or(false)
+            || !self
+                .paths
+                .begun_play
+                .read(&self.process, self.module)
+                .unwrap_or(false)
             || num_streaming_levels_loading > 0
     }
 }
@@ -253,7 +169,7 @@ impl State {
             return;
         };
 
-        let transition = read_transition(&game.process, game.module)
+        let transition = read_transition(&game.paths, &game.process, game.module)
             .map(|x| game.transition_description.update_infallible(x));
         if let Some(transition) = transition {
             if transition.old == Transition::Menu && transition.current == Transition::Hub {
@@ -269,10 +185,14 @@ impl State {
 
         let game_flow_state = game
             .game_flow_state
-            .update(GameFlowState::read(&game.process, game.module))
+            .update(GameFlowState::read(&game.paths, &game.process, game.module))
             .copied();
 
-        let begun_play = read_begun_play(&game.process, game.module).unwrap_or(true);
+        let begun_play = game
+            .paths
+            .begun_play
+            .read(&game.process, game.module)
+            .unwrap_or(true);
 
         if !begun_play {
             asr::timer::pause_game_time();
@@ -301,12 +221,16 @@ impl State {
         // Sanity check that we're in the final boss
         // TODO: update this once we're able to tell the name of the active level
         if game
-            .process
-            .read_pointer_path64::<u32>(game.module, &STREAMING_LEVELS_LEN_PATH)
+            .paths
+            .streaming_levels_len
+            .read(&game.process, game.module)
             .unwrap_or(0)
             == 5
         {
-            let boss_health = read_boss_health(&game.process, game.module)
+            let boss_health = game
+                .paths
+                .squidward_boss_health
+                .read(&game.process, game.module)
                 .map(|x| game.squidward_boss_health.update_infallible(x));
             if let Some(boss_health) = boss_health {
                 if boss_health.changed_to(&0) {
@@ -338,5 +262,21 @@ impl State {
         }
 
         self.game = Game::attach();
+    }
+}
+
+pub enum Version {
+    V1_0_2,
+}
+
+impl Version {
+    fn from_module_size(size: u64) -> Option<Self> {
+        match size {
+            0x5D7_3000 => Some(Self::V1_0_2),
+            x => {
+                asr::print_message(format!("Unknown module size: {x:#X}").as_str());
+                None
+            }
+        }
     }
 }

@@ -133,19 +133,10 @@ struct Settings {
 }
 
 impl Settings {
-    const fn new() -> Self {
-        Self { reset: true }
+    fn new() -> Self {
+        let reset = asr::user_settings::add_bool("Reset", "Reset on New Game", true);
+        Self { reset }
     }
-
-    // NOTE: This adds duplicate settings (at least on asr-debugger) revisit this when LiveSplit actually supports adding settings
-    // fn update(&mut self) {
-    //     // Note: this is unfortunately not implemented in LiveSplit's UI yet, but I think it's a sane default
-    //     self.reset = asr::user_settings::add_bool(
-    //         "Reset",
-    //         "Automatically reset the timer when starting a New Game",
-    //         true,
-    //     );
-    // }
 }
 
 struct State {
@@ -154,7 +145,7 @@ struct State {
 }
 
 impl State {
-    const fn new() -> Self {
+    fn new() -> Self {
         Self {
             game: None,
             settings: Settings::new(),

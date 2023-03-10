@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Additions
 
+- Implemented settings to toggle the reset feature
 - Added version detection
   - Support for Version 1.0.2.0 (Revision 684088)
   - Support for Version 1.0.3.0 (Revision 687718)

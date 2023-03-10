@@ -266,13 +266,15 @@ impl State {
 }
 
 pub enum Version {
-    V1_0_2,
+    V1_0_2, // Revision 684088
+    V1_0_3, // Revision 687718
 }
 
 impl Version {
     fn from_module_size(size: u64) -> Option<Self> {
         match size {
             0x5D7_3000 => Some(Self::V1_0_2),
+            0x5D4_B000 => Some(Self::V1_0_3),
             x => {
                 asr::print_message(format!("Unknown module size: {x:#X}").as_str());
                 None

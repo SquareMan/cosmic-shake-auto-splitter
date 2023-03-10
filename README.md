@@ -10,6 +10,10 @@ To target WASM when building:
 
 Find the final WASM module under `./target/wasm32-unknown-unknown/release/cosmic-shake-auto-splitter.wasm`
 
+## Cheat Table
+
+`CosmicShake-Win64-Shipping.CT` is a Cheat Engine table that contains a lot of reverse engineered pointer paths that are used by the autosplitter and others that may or may not be useful in the future. There are no actual cheats implemented here, it is purely for reverse engineering purposes.
+
 #### License
 
 <sup>

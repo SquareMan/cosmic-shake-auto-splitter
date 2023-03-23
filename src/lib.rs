@@ -1,3 +1,5 @@
+#![no_std]
+
 mod ffi;
 mod paths;
 
@@ -266,10 +268,16 @@ impl Version {
         match size {
             0x5D7_3000 => Some(Self::V1_0_2),
             0x5D4_B000 => Some(Self::V1_0_3),
-            x => {
-                asr::print_message(format!("Unknown module size: {x:#X}").as_str());
+            _ => {
+                asr::print_message("Unknown module size. Game version not supported.");
                 None
             }
         }
     }
+}
+
+#[cfg(all(not(test), target_arch = "wasm32"))]
+#[panic_handler]
+fn panic(_: &core::panic::PanicInfo) -> ! {
+    core::arch::wasm32::unreachable()
 }

@@ -1,15 +1,11 @@
-use std::sync::Mutex;
-
-use once_cell::sync::Lazy;
-
 use crate::State;
 
-// TODO: Mutex shouldn't be necessary as this is all single-threaded (double-check this)
-static STATE: Lazy<Mutex<State>> = Lazy::new(|| Mutex::new(State::new()));
+static mut STATE: Option<State> = None;
 
 /// LiveSplit Auto Splitting Runtime expects a function named `update` to be exported in the wasm module.
 #[no_mangle]
 pub extern "C" fn update() {
-    let mut state = STATE.lock().unwrap();
-    state.update();
+    // SAFETY: Wasm is single threaded, so we don't have to worry about the `STATE` static
+    // being accessed from multiple threads.
+    unsafe { STATE.get_or_insert_with(|| State::new()).update() };
 }

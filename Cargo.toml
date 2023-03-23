@@ -12,5 +12,4 @@ crate-type = ["cdylib"]
 
 asr = { git = "https://github.com/LiveSplit/asr" }
 bytemuck = "1.13.0"
-once_cell = "1.17.1"
-widestring = "1.0.2"
+widestring = { version = "1.0.2", default-features = false }

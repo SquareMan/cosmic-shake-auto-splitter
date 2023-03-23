@@ -19,7 +19,7 @@ const CURRENT_HEALTH_OFFSET: u64 = 0x264;
 
 pub struct Path<T, const N: usize> {
     path: [u64; N],
-    ty: std::marker::PhantomData<T>,
+    ty: core::marker::PhantomData<T>,
 }
 pub struct BitPath<const N: usize> {
     path: Path<u8, N>,
@@ -127,7 +127,7 @@ impl<T: Pod, const N: usize> Path<T, N> {
     fn new(path: [u64; N]) -> Self {
         Self {
             path,
-            ty: std::marker::PhantomData,
+            ty: core::marker::PhantomData,
         }
     }
 

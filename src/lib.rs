@@ -129,16 +129,11 @@ impl Game {
     }
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug, asr::Settings)]
 struct Settings {
+    /// Reset on New Game
+    #[default = true]
     reset: bool,
-}
-
-impl Settings {
-    fn new() -> Self {
-        let reset = asr::user_settings::add_bool("Reset", "Reset on New Game", true);
-        Self { reset }
-    }
 }
 
 struct State {
@@ -150,7 +145,7 @@ impl State {
     fn new() -> Self {
         Self {
             game: None,
-            settings: Settings::new(),
+            settings: Settings::register(),
         }
     }
 

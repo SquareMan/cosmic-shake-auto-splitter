@@ -30,10 +30,10 @@ jobs:
         with:
           submodules: true
       - name: Install stable
-        uses: dtolnay/rust-toolchain@master
+        uses: dtolnay/rust-toolchain@stable
         with:
-          toolchain: stable
           components: clippy
+          targets: wasm32-unknown-unknown
       - name: cargo clippy
         uses: actions-rs/clippy-check@v1
         with:

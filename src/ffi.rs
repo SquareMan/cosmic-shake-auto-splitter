@@ -7,5 +7,5 @@ static mut STATE: Option<State> = None;
 pub extern "C" fn update() {
     // SAFETY: Wasm is single threaded, so we don't have to worry about the `STATE` static
     // being accessed from multiple threads.
-    unsafe { STATE.get_or_insert_with(|| State::new()).update() };
+    unsafe { STATE.get_or_insert_with(State::new).update() };
 }

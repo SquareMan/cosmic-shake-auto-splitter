@@ -1,17 +1,14 @@
 #![no_std]
 
 mod ffi;
+mod memory;
 mod paths;
 
-use asr::{timer::TimerState, watcher::Watcher, Process};
-use paths::Paths;
+use asr::{timer::TimerState, Process};
+use memory::Memory;
 use widestring::{u16cstr, U16CStr};
 
 const EXE: &str = "CosmicShake-Win64-Shipping.exe";
-
-const MENU: &U16CStr = u16cstr!("/Game/CS/Maps/MainMenu/MainMenu_P");
-const HUB: &U16CStr = u16cstr!("/Game/CS/Maps/BikiniBottom/BB_P");
-const OVERWORLD: &U16CStr = u16cstr!("/Game/CS/Maps/StreamingOverworld/Overworld_P");
 
 #[repr(u8)]
 #[derive(Debug, Copy, Clone, PartialEq, Eq, bytemuck::CheckedBitPattern)]
@@ -39,48 +36,16 @@ pub enum Transition {
     Overworld,
 }
 
-impl GameFlowState {
-    fn read(paths: &Paths, proc: &Process, module: u64) -> Option<Self> {
-        let last_game_state = paths
-            .game_flow_state
-            .read(proc, module)
-            .map(bytemuck::checked::cast::<u8, _>)?;
-        let game_state_len = paths.game_flow_state_len.read(proc, module)?;
-        if game_state_len > 0 {
-            Some(last_game_state)
-        } else {
-            // Treat no active states as undefined, this avoids updating our watcher with None and potentially missing a transition
-            Some(GameFlowState::Undefined)
-        }
-    }
-}
-
-fn read_transition(paths: &Paths, proc: &Process, module: u64) -> Option<Transition> {
-    let mut buf = paths.transition_description.read(proc, module)?;
-
-    // We force the last byte in the buffer to null after reading these strings, so we know we can unwrap here
-    *buf.last_mut().unwrap() = 0;
-    let cstr = U16CStr::from_slice_truncate(&buf).unwrap();
-
-    // can't match on U16CStr
-    if cstr == MENU {
-        Some(Transition::Menu)
-    } else if cstr == HUB {
-        Some(Transition::Hub)
-    } else if cstr == OVERWORLD {
-        Some(Transition::Overworld)
-    } else {
-        None
-    }
+impl Transition {
+    pub const MENU: &U16CStr = u16cstr!("/Game/CS/Maps/MainMenu/MainMenu_P");
+    pub const HUB: &U16CStr = u16cstr!("/Game/CS/Maps/BikiniBottom/BB_P");
+    pub const OVERWORLD: &U16CStr = u16cstr!("/Game/CS/Maps/StreamingOverworld/Overworld_P");
 }
 
 struct Game {
     process: Process,
-    paths: Paths,
     module: u64,
-    game_flow_state: Watcher<GameFlowState>,
-    transition_description: Watcher<Transition>,
-    squidward_boss_health: Watcher<u32>,
+    memory: Memory,
     ready_to_end: bool,
 }
 
@@ -92,40 +57,13 @@ impl Game {
             .get_module_size(EXE)
             .ok()
             .and_then(Version::from_module_size)?;
-        let paths = Paths::new(version);
 
         Some(Self {
             process,
-            paths,
             module,
-            game_flow_state: Watcher::new(),
-            transition_description: Watcher::new(),
-            squidward_boss_health: Watcher::new(),
+            memory: Memory::new(version),
             ready_to_end: false,
         })
-    }
-
-    fn is_loading(&self) -> bool {
-        let Some(world_ptr) = self
-            .paths.current_world
-            .read(&self.process, self.module) else
-        {
-            return false;
-        };
-
-        let num_streaming_levels_loading = self
-            .paths
-            .num_streaming_levels_being_loaded
-            .read(&self.process, self.module)
-            .unwrap_or(0);
-
-        world_ptr == 0
-            || !self
-                .paths
-                .begun_play
-                .read(&self.process, self.module)
-                .unwrap_or(false)
-            || num_streaming_levels_loading > 0
     }
 }
 
@@ -157,9 +95,9 @@ impl State {
             return;
         };
 
-        let transition = read_transition(&game.paths, &game.process, game.module)
-            .map(|x| game.transition_description.update_infallible(x));
-        if let Some(transition) = transition {
+        game.memory.update(&game.process, game.module);
+
+        if let Some(transition) = game.memory.transition_description() {
             if transition.old == Transition::Menu && transition.current == Transition::Hub {
                 if self.settings.reset {
                     asr::timer::reset();
@@ -171,21 +109,16 @@ impl State {
             }
         }
 
-        let game_flow_state = game
-            .game_flow_state
-            .update(GameFlowState::read(&game.paths, &game.process, game.module))
-            .copied();
+        let game_flow_state = game.memory.game_flow_state();
+        let is_loading = game.memory.is_loading(&game.process, game.module);
 
-        let begun_play = game
-            .paths
-            .begun_play
-            .read(&game.process, game.module)
-            .unwrap_or(true);
-
-        if !begun_play {
+        if !game.memory.begun_play().map(|x| x.current).unwrap_or(true) {
             asr::timer::pause_game_time();
-        } else if matches!(transition.map(|x| x.current), Some(Transition::Menu)) {
-            if game.is_loading() {
+        } else if matches!(
+            game.memory.transition_description().map(|x| x.current),
+            Some(Transition::Menu)
+        ) {
+            if is_loading {
                 asr::timer::pause_game_time();
             } else {
                 asr::timer::resume_game_time();
@@ -196,42 +129,26 @@ impl State {
                     GameFlowState::QuickTravelTransitionState
                     | GameFlowState::LoadingTransitionState,
                 ) => asr::timer::pause_game_time(),
-                Some(GameFlowState::RescueState) if game.is_loading() => {
-                    asr::timer::pause_game_time()
-                }
-                None if game.is_loading() => asr::timer::pause_game_time(),
+                Some(GameFlowState::RescueState) if is_loading => asr::timer::pause_game_time(),
+                None if is_loading => asr::timer::pause_game_time(),
                 _ => {
                     asr::timer::resume_game_time();
                 }
             }
         }
 
-        // Sanity check that we're in the final boss
-        // TODO: update this once we're able to tell the name of the active level
-        if game
-            .paths
-            .streaming_levels_len
-            .read(&game.process, game.module)
-            .unwrap_or(0)
-            == 5
-        {
-            let boss_health = game
-                .paths
-                .squidward_boss_health
-                .read(&game.process, game.module)
-                .map(|x| game.squidward_boss_health.update_infallible(x));
-            if let Some(boss_health) = boss_health {
-                if boss_health.changed_to(&0) {
-                    game.ready_to_end = true;
-                }
+        if let Some(boss_health) = game.memory.squidward_boss_health() {
+            if boss_health.changed_to(&0) {
+                game.ready_to_end = true;
             }
         }
 
         // After final boss is defeated, split at the start of the next load
         if game.ready_to_end
-            && game_flow_state
-                .map(|x| x.current == GameFlowState::LoadingTransitionState)
-                .unwrap_or(false)
+            && matches!(
+                game_flow_state.map(|x| x.current),
+                Some(GameFlowState::LoadingTransitionState)
+            )
         {
             game.ready_to_end = false;
             asr::timer::split();

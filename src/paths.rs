@@ -1,4 +1,4 @@
-use asr::Process;
+use asr::{Address, Process};
 use bytemuck::Pod;
 
 use crate::Version;
@@ -131,7 +131,7 @@ impl<T: Pod, const N: usize> Path<T, N> {
         }
     }
 
-    pub fn read(&self, proc: &Process, module: u64) -> Option<T> {
+    pub fn read(&self, proc: &Process, module: Address) -> Option<T> {
         proc.read_pointer_path64(module, &self.path).ok()
     }
 }
@@ -145,7 +145,7 @@ impl<const N: usize> BitPath<N> {
         }
     }
 
-    pub fn read(&self, proc: &Process, module: u64) -> Option<bool> {
+    pub fn read(&self, proc: &Process, module: Address) -> Option<bool> {
         let mask = 1 << self.bit_num;
         self.path.read(proc, module).map(|field| field & mask != 0)
     }

@@ -4,7 +4,7 @@ mod ffi;
 mod memory;
 mod paths;
 
-use asr::{timer::TimerState, Process};
+use asr::{timer::TimerState, Address, Process};
 use memory::Memory;
 use widestring::{u16cstr, U16CStr};
 
@@ -44,7 +44,7 @@ impl Transition {
 
 struct Game {
     process: Process,
-    module: u64,
+    module: Address,
     memory: Memory,
     ready_to_end: bool,
 }
@@ -52,7 +52,7 @@ struct Game {
 impl Game {
     fn attach() -> Option<Self> {
         let process = Process::attach(EXE)?;
-        let module = process.get_module_address(EXE).ok()?.0;
+        let module = process.get_module_address(EXE).ok()?;
         let version = process
             .get_module_size(EXE)
             .ok()

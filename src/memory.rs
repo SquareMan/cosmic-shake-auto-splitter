@@ -1,6 +1,6 @@
 use asr::{
     watcher::{Pair, Watcher},
-    Process,
+    Address, Process,
 };
 use widestring::U16CStr;
 
@@ -26,7 +26,7 @@ impl Memory {
         }
     }
 
-    pub fn update(&mut self, proc: &Process, module: u64) {
+    pub fn update(&mut self, proc: &Process, module: Address) {
         self.read_transition(proc, module)
             .map(|x| self.transition_description.update_infallible(x));
         self.read_game_flow_state(proc, module)
@@ -37,11 +37,8 @@ impl Memory {
             .update(self.read_boss_health(proc, module));
     }
 
-    pub fn is_loading(&self, proc: &Process, module: u64) -> bool {
-        let Some(world_ptr) = self
-            .paths.current_world
-            .read(proc, module) else
-        {
+    pub fn is_loading(&self, proc: &Process, module: Address) -> bool {
+        let Some(world_ptr) = self.paths.current_world.read(proc, module) else {
             return false;
         };
 
@@ -74,7 +71,7 @@ impl Memory {
 }
 
 impl Memory {
-    fn read_transition(&self, proc: &Process, module: u64) -> Option<Transition> {
+    fn read_transition(&self, proc: &Process, module: Address) -> Option<Transition> {
         let mut buf = self.paths.transition_description.read(proc, module)?;
 
         // We force the last byte in the buffer to null after reading these strings, so we know we can unwrap here
@@ -93,7 +90,7 @@ impl Memory {
         }
     }
 
-    fn read_game_flow_state(&self, proc: &Process, module: u64) -> Option<GameFlowState> {
+    fn read_game_flow_state(&self, proc: &Process, module: Address) -> Option<GameFlowState> {
         let last_game_state = self
             .paths
             .game_flow_state
@@ -108,7 +105,7 @@ impl Memory {
         }
     }
 
-    fn read_boss_health(&self, proc: &Process, module: u64) -> Option<u32> {
+    fn read_boss_health(&self, proc: &Process, module: Address) -> Option<u32> {
         // Sanity check that we're in the final boss
         // TODO: update this once we're able to tell the name of the active level
         let streaming_levels_len = self.paths.streaming_levels_len.read(proc, module)?;

@@ -10,6 +10,6 @@ crate-type = ["cdylib"]
 
 [dependencies]
 
-asr = { git = "https://github.com/LiveSplit/asr", rev="47c287c", features = ["derive"]}
+asr = { git = "https://github.com/LiveSplit/asr", features = ["derive"]}
 bytemuck = "1.13.0"
 widestring = { version = "1.0.2", default-features = false }

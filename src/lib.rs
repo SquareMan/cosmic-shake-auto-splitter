@@ -4,7 +4,7 @@ mod ffi;
 mod memory;
 mod paths;
 
-use asr::{timer::TimerState, Address, Process};
+use asr::{settings::Gui, timer::TimerState, Address, Process};
 use memory::Memory;
 use widestring::{u16cstr, U16CStr};
 
@@ -67,7 +67,7 @@ impl Game {
     }
 }
 
-#[derive(Debug, asr::Settings)]
+#[derive(Debug, Gui)]
 struct Settings {
     /// Reset on New Game
     #[default = true]
@@ -90,6 +90,7 @@ impl State {
     fn update(&mut self) {
         // TODO: Limit how often this is called. We could lower the splitter update rate while unhooked
         self.ensure_hooked();
+        self.settings.update();
 
         let Some(game) = self.game.as_mut() else {
             return;
